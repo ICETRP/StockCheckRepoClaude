@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude Algo Dashboard — Login</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+</head>
+<body>
+<div class="login-wrap">
+  <form class="login-box" method="post">
+    <div class="brand">Claude Algo <span>Dashboard</span></div>
+    <p class="login-sub">Enter the dashboard password to continue.</p>
+    {% if error %}<div class="login-error">{{ error }}</div>{% endif %}
+    <input type="password" name="password" placeholder="Password" autofocus autocomplete="current-password">
+    <button type="submit" class="btn btn-primary">Sign in</button>
+  </form>
+</div>
+</body>
+</html>

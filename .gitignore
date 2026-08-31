@@ -1,0 +1,8 @@
+.env
+__pycache__/
+*.pyc
+outputs/
+
+# stray one-off result files sitting at the repo root (not source, not needed at runtime)
+/*.csv
+/*.html

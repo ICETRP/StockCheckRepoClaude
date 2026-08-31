@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude Algo Dashboard</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-left">
+    <div class="brand">Claude Algo <span>Dashboard</span></div>
+    <div class="topbar-sub">Yahoo &middot; Twelve Data &middot; Alpaca — local screener &amp; backtest runner</div>
+  </div>
+  <div class="topbar-search">
+    <input id="ticker-search" type="text" list="global-ticker-list" placeholder="Look up any ticker… e.g. AAPL" autocomplete="off">
+    <datalist id="global-ticker-list"></datalist>
+    <select id="ticker-search-provider">
+      <option value="yahoo">yahoo</option>
+      <option value="twelvedata">twelvedata</option>
+      <option value="alpaca">alpaca</option>
+    </select>
+    <button id="ticker-search-btn" class="btn btn-primary btn-small">View Chart</button>
+  </div>
+</header>
+
+<main class="layout">
+  <section class="panel run-panel">
+    <h2>Run a Strategy</h2>
+
+    <label class="field">
+      <span>Strategy</span>
+      <select id="strategy"></select>
+    </label>
+
+    <label class="field">
+      <span>Data Provider</span>
+      <select id="provider"></select>
+    </label>
+
+    <div id="universe-field" class="field" hidden>
+      <span>Universe (blind market search)</span>
+      <select id="universe">
+        <option value="">— use tickers below —</option>
+      </select>
+    </div>
+
+    <div id="universe-limit-field" class="field" hidden>
+      <span>Universe Limit</span>
+      <input id="universe_limit" type="number" step="10" value="100">
+    </div>
+
+    <div id="entry-mode-field" class="field" hidden>
+      <span>Entry Mode</span>
+      <select id="entry_mode">
+        <option value="breakout">breakout</option>
+        <option value="setup">setup</option>
+      </select>
+    </div>
+
+    <div id="tickers-field" class="field">
+      <span>Tickers <small>(search &amp; pick, or type your own — comma/space separated)</small></span>
+      <input id="tickers" type="text" list="ticker-list" placeholder="e.g. NVDA, AMD, MSFT">
+      <datalist id="ticker-list"></datalist>
+      <div class="hint">Leave blank to use the strategy's default watchlist.</div>
+    </div>
+
+    <div id="dynamic-fields"></div>
+
+    <label class="field checkbox-field">
+      <input id="backtest" type="checkbox">
+      <span>Run as backtest (instead of live screener)</span>
+    </label>
+
+    <div id="date-fields" class="date-fields" hidden>
+      <label class="field">
+        <span>Start</span>
+        <input id="start" type="date" value="2023-01-01">
+      </label>
+      <label class="field">
+        <span>End <small>(optional, defaults to today)</small></span>
+        <input id="end" type="date">
+      </label>
+    </div>
+
+    <div class="actions">
+      <button id="run-btn" class="btn btn-primary">Run</button>
+      <button id="cancel-btn" class="btn btn-danger" hidden>Cancel</button>
+      <span id="status-badge" class="badge" hidden></span>
+    </div>
+
+    <div class="field">
+      <span>Command</span>
+      <pre id="cmd-preview" class="cmd-preview">—</pre>
+    </div>
+  </section>
+
+  <section class="panel results-panel">
+    <h2>Live Log</h2>
+    <pre id="log-box" class="log-box">Run a strategy to see output here…</pre>
+
+    <h2>Results</h2>
+    <div id="results-meta" class="results-meta"></div>
+    <div id="results-table" class="table-wrap"><p class="muted">No results yet.</p></div>
+  </section>
+
+  <section class="panel history-panel">
+    <h2>Run History <button id="refresh-history" class="btn btn-small">Refresh</button></h2>
+    <div id="history-list" class="history-list"><p class="muted">No runs yet.</p></div>
+  </section>
+</main>
+
+<div id="chart-modal" class="modal-overlay" hidden>
+  <div class="modal-box">
+    <div class="modal-header">
+      <div>
+        <h3 id="chart-title">—</h3>
+        <div id="chart-subtitle" class="chart-subtitle"></div>
+      </div>
+      <div class="modal-header-right">
+        <select id="chart-provider">
+          <option value="yahoo">yahoo</option>
+          <option value="twelvedata">twelvedata</option>
+          <option value="alpaca">alpaca</option>
+        </select>
+        <button id="chart-reload" class="btn btn-small">Reload</button>
+        <button id="chart-close" class="btn btn-small">&times; Close</button>
+      </div>
+    </div>
+    <div id="chart-status" class="chart-status" hidden></div>
+
+    <div id="verdict-box" class="verdict-box" hidden>
+      <div id="verdict-badge" class="verdict-badge">HOLD</div>
+      <div class="verdict-body">
+        <div class="verdict-price-row">
+          <span class="verdict-price-label">Current Price</span>
+          <span id="verdict-price" class="verdict-price">—</span>
+        </div>
+        <ul id="verdict-notes" class="verdict-notes"></ul>
+      </div>
+    </div>
+
+    <div id="chart-container" class="chart-container"></div>
+    <div id="chart-legend" class="chart-legend"></div>
+    <div id="chart-meta" class="chart-meta"></div>
+    <div class="chart-disclaimer">Rule-based technical read from price/EMA/Bollinger/resistance only — not financial advice.</div>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='vendor/lightweight-charts.standalone.production.js') }}"></script>
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
