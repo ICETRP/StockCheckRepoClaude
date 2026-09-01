@@ -145,6 +145,27 @@ def fetch_universe_tickers(cap_bucket: str, min_volume: float, limit: int = 100)
     raise last_exc
 
 
+def fetch_universe_tickers_alpaca(min_volume: float, limit: int = 100) -> list[str]:
+    """
+    Blind-search via Alpaca's screener (most-actives by volume). Alpaca has no
+    market-cap data on this plan, so cap-bucket filtering ("penny"/"midcap"/"bluechip")
+    isn't available here - this always returns the most active symbols by volume,
+    filtered by min_volume.
+    """
+    key = os.environ.get("ALPACA_API_KEY")
+    secret = os.environ.get("ALPACA_API_SECRET")
+    if not (key and secret):
+        raise ValueError("ALPACA_API_KEY and ALPACA_API_SECRET must be set in environment")
+
+    headers = {"APCA-API-KEY-ID": key, "APCA-API-SECRET-KEY": secret}
+    url = "https://data.alpaca.markets/v1beta1/screener/stocks/most-actives"
+    params = {"by": "volume", "top": min(limit, 100)}  # Alpaca caps `top` at 100
+    resp = requests.get(url, headers=headers, params=params, timeout=20)
+    resp.raise_for_status()
+    actives = resp.json().get("most_actives", [])
+    return [a["symbol"] for a in actives if a.get("symbol") and a.get("volume", 0) >= min_volume]
+
+
 # ==================== DATA FETCHING ====================
 
 def fetch_daily_data(ticker: str, start: str, end: str) -> pd.DataFrame:
@@ -454,8 +475,10 @@ def main():
     parser = argparse.ArgumentParser(description="Breakout screener & backtester")
     parser.add_argument("--tickers", nargs="+", default=None)
     parser.add_argument("--universe", choices=["penny", "midcap", "bluechip"], default=None,
-                         help="Blind-search the whole market in this cap bucket via Yahoo's "
-                              "screener instead of using --tickers/the default watchlist")
+                         help="Blind-search the whole market instead of using --tickers/the default "
+                              "watchlist. Uses Yahoo's screener, bucketed by market cap, unless "
+                              "--data-source alpaca is set, in which case it uses Alpaca's most-active "
+                              "by volume (no cap-bucket data on Alpaca, so the bucket choice is ignored)")
     parser.add_argument("--universe-limit", type=int, default=100,
                          help="Max tickers to pull from --universe (default 100)")
     parser.add_argument("--resistance-window", type=int, default=50)
@@ -482,14 +505,24 @@ def main():
     DATA_SOURCE = args.data_source
 
     if args.universe:
-        print(f"Blind-searching {args.universe} universe (min volume {args.min_volume:,.0f})...")
-        try:
-            args.tickers = fetch_universe_tickers(args.universe, args.min_volume, args.universe_limit)
-        except Exception as e:
-            print(f"Universe search failed: {e}")
-            print("Yahoo's screener endpoint is often rate-limited/blocked from cloud hosts. "
-                  "Try again shortly, or use --tickers with an explicit list instead of --universe.")
-            return
+        if args.data_source == "alpaca":
+            print(f"Blind-searching via Alpaca (most-active by volume, min volume {args.min_volume:,.0f})...")
+            print(f"Note: Alpaca has no market-cap data on this plan, so the '{args.universe}' "
+                  "cap bucket is ignored - this pulls the most active symbols by volume instead.")
+            try:
+                args.tickers = fetch_universe_tickers_alpaca(args.min_volume, args.universe_limit)
+            except Exception as e:
+                print(f"Universe search failed: {e}")
+                return
+        else:
+            print(f"Blind-searching {args.universe} universe (min volume {args.min_volume:,.0f})...")
+            try:
+                args.tickers = fetch_universe_tickers(args.universe, args.min_volume, args.universe_limit)
+            except Exception as e:
+                print(f"Universe search failed: {e}")
+                print("Yahoo's screener endpoint is often rate-limited/blocked from cloud hosts. "
+                      "Try again shortly, or use --tickers with an explicit list instead of --universe.")
+                return
         if not args.tickers:
             print("No tickers matched the universe filter.")
             return
