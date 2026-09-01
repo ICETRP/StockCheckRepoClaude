@@ -207,7 +207,10 @@ def fetch_daily_data_alpaca(ticker: str, start: str, end: str) -> pd.DataFrame:
 
     # HTTP fallback
     headers = {"APCA-API-KEY-ID": key, "APCA-API-SECRET-KEY": secret}
-    url = f"{base}/stocks/{ticker}/bars?start={start}&end={end}&timeframe=1Day&limit=10000"
+    # Free/paper accounts are only entitled to the IEX feed, not the default SIP feed -
+    # requesting SIP on a free key returns 403 Forbidden, so pin feed=iex unless overridden.
+    feed = os.environ.get("ALPACA_DATA_FEED", "iex")
+    url = f"{base}/stocks/{ticker}/bars?start={start}&end={end}&timeframe=1Day&limit=10000&feed={feed}"
     resp = requests.get(url, headers=headers, timeout=20)
     resp.raise_for_status()
     data = resp.json()
