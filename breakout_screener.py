@@ -36,6 +36,7 @@ Install requirements first (optional extras for data providers):
 import argparse
 import sys
 import os
+import time
 import requests
 try:
     # optional: load environment variables from a .env file if present
@@ -127,9 +128,21 @@ def fetch_universe_tickers(cap_bucket: str, min_volume: float, limit: int = 100)
             clauses.append(yf.EquityQuery("lt", ["intradaymarketcap", hi]))
 
     query = yf.EquityQuery("and", clauses)
-    result = yf.screen(query, size=min(limit, 250), sortField="avgdailyvol3m", sortAsc=False)
-    quotes = result.get("quotes", [])
-    return [q["symbol"] for q in quotes if q.get("symbol")]
+
+    # Yahoo's screener endpoint intermittently rate-limits/blocks requests from cloud
+    # hosts (crumb fetch 429 -> screen call 401). This tends to clear up within seconds,
+    # so retry a few times with backoff before giving up.
+    last_exc = None
+    for delay in [0, 3, 6, 12]:
+        if delay:
+            time.sleep(delay)
+        try:
+            result = yf.screen(query, size=min(limit, 250), sortField="avgdailyvol3m", sortAsc=False)
+            quotes = result.get("quotes", [])
+            return [q["symbol"] for q in quotes if q.get("symbol")]
+        except Exception as e:
+            last_exc = e
+    raise last_exc
 
 
 # ==================== DATA FETCHING ====================
