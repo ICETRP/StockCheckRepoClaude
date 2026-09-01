@@ -26,7 +26,7 @@ Usage:
 Optional data sources:
   - `yahoo` (default, uses `yfinance`)
   - `twelvedata` (requires `TWELVEDATA_API_KEY` in env)
-  - `alpaca` (requires `ALPACA_API_KEY` and `ALPACA_SECRET_KEY` in env)
+  - `alpaca` (requires `ALPACA_API_KEY` and `ALPACA_API_SECRET` in env)
 
 Install requirements first (optional extras for data providers):
     pip install yfinance pandas numpy requests
@@ -181,13 +181,15 @@ def fetch_daily_data_twelvedata(ticker: str, start: str, end: str) -> pd.DataFra
 
 def fetch_daily_data_alpaca(ticker: str, start: str, end: str) -> pd.DataFrame:
     """Fetch daily OHLCV from Alpaca Data API.
-    Requires env vars: ALPACA_API_KEY, ALPACA_SECRET_KEY. Optional ALPACA_BASE_URL.
+    Requires env vars: ALPACA_API_KEY, ALPACA_API_SECRET.
     """
     key = os.environ.get("ALPACA_API_KEY")
-    secret = os.environ.get("ALPACA_SECRET_KEY")
-    base = os.environ.get("ALPACA_BASE_URL", "https://data.alpaca.markets/v2")
+    secret = os.environ.get("ALPACA_API_SECRET")
+    # Market data always lives on data.alpaca.markets, regardless of ALPACA_BASE_URL
+    # (which points at the trading API, e.g. paper-api.alpaca.markets, for order execution).
+    base = "https://data.alpaca.markets/v2"
     if not (key and secret):
-        raise ValueError("ALPACA_API_KEY and ALPACA_SECRET_KEY must be set in environment")
+        raise ValueError("ALPACA_API_KEY and ALPACA_API_SECRET must be set in environment")
 
     # Prefer SDK if available
     if alpaca is not None:
@@ -465,7 +467,13 @@ def main():
 
     if args.universe:
         print(f"Blind-searching {args.universe} universe (min volume {args.min_volume:,.0f})...")
-        args.tickers = fetch_universe_tickers(args.universe, args.min_volume, args.universe_limit)
+        try:
+            args.tickers = fetch_universe_tickers(args.universe, args.min_volume, args.universe_limit)
+        except Exception as e:
+            print(f"Universe search failed: {e}")
+            print("Yahoo's screener endpoint is often rate-limited/blocked from cloud hosts. "
+                  "Try again shortly, or use --tickers with an explicit list instead of --universe.")
+            return
         if not args.tickers:
             print("No tickers matched the universe filter.")
             return
