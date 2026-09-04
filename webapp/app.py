@@ -526,6 +526,168 @@ def api_chart(ticker):
         return jsonify({"error": str(exc)}), 502
 
 
+# ==================== TRADE LOG (persisted to a Google Sheet, so it survives Render redeploys) ====================
+
+TRADE_SHEET_HEADERS = [
+    "id", "logged_at", "ticker", "strategy", "entry_date", "entry_price",
+    "stop_price", "target_price", "qty", "status", "exit_date", "exit_price",
+    "exit_reason", "pnl", "r_multiple", "notes",
+]
+
+_gsheet_client = None
+_gsheet_ws = None
+
+
+def _trade_sheet():
+    """Lazily connect to the trade log Google Sheet. Configured via GOOGLE_SERVICE_ACCOUNT_JSON
+    (the full service-account key JSON, minified to one line) and TRADE_LOG_SHEET_ID (the sheet's
+    id or full URL) - see DEPLOY.md for one-time setup."""
+    global _gsheet_client, _gsheet_ws
+    if _gsheet_ws is not None:
+        return _gsheet_ws
+
+    creds_json = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON")
+    sheet_ref = os.environ.get("TRADE_LOG_SHEET_ID")
+    if not creds_json or not sheet_ref:
+        raise RuntimeError(
+            "Trade log isn't configured yet - set GOOGLE_SERVICE_ACCOUNT_JSON and "
+            "TRADE_LOG_SHEET_ID in the environment (see DEPLOY.md)."
+        )
+
+    import gspread
+
+    if _gsheet_client is None:
+        _gsheet_client = gspread.service_account_from_dict(json.loads(creds_json))
+
+    sheet_id = sheet_ref
+    m = re.search(r"/d/([a-zA-Z0-9-_]+)", sheet_ref)
+    if m:
+        sheet_id = m.group(1)
+
+    ws = _gsheet_client.open_by_key(sheet_id).sheet1
+    values = ws.get_all_values()
+    if not values or not values[0]:
+        ws.append_row(TRADE_SHEET_HEADERS)
+    _gsheet_ws = ws
+    return ws
+
+
+def _read_trades():
+    ws = _trade_sheet()
+    return ws.get_all_records(expected_headers=TRADE_SHEET_HEADERS)
+
+
+def _append_trade(row_dict):
+    ws = _trade_sheet()
+    ws.append_row([row_dict.get(h, "") for h in TRADE_SHEET_HEADERS], value_input_option="USER_ENTERED")
+
+
+def _find_trade_row(trade_id):
+    ws = _trade_sheet()
+    ids = ws.col_values(1)  # column A = id, row 1 is the header
+    for i, v in enumerate(ids, start=1):
+        if v == trade_id:
+            return i
+    return None
+
+
+def _update_trade_row(row_idx, row_dict):
+    ws = _trade_sheet()
+    last_col = chr(ord("A") + len(TRADE_SHEET_HEADERS) - 1)
+    ws.update(f"A{row_idx}:{last_col}{row_idx}", [[row_dict.get(h, "") for h in TRADE_SHEET_HEADERS]],
+              value_input_option="USER_ENTERED")
+
+
+@app.route("/trades")
+def trades_page():
+    return render_template("trades.html")
+
+
+@app.route("/api/trades", methods=["GET"])
+def api_trades_list():
+    try:
+        return jsonify(_read_trades())
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 502
+
+
+@app.route("/api/trades", methods=["POST"])
+def api_trades_create():
+    body = request.get_json(force=True, silent=True) or {}
+    ticker = (body.get("ticker") or "").strip().upper()
+    if not ticker or not TICKER_RE.match(ticker):
+        return jsonify({"error": "invalid ticker"}), 400
+    try:
+        entry_price = float(body.get("entry_price"))
+        stop_price = float(body.get("stop_price"))
+        qty = float(body.get("qty"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "entry_price, stop_price, and qty are required numbers"}), 400
+    target_raw = body.get("target_price")
+    target_price = float(target_raw) if target_raw not in (None, "") else ""
+
+    row = {
+        "id": uuid.uuid4().hex[:10],
+        "logged_at": datetime.now().isoformat(timespec="seconds"),
+        "ticker": ticker,
+        "strategy": body.get("strategy") or "manual",
+        "entry_date": body.get("entry_date") or datetime.now().strftime("%Y-%m-%d"),
+        "entry_price": entry_price,
+        "stop_price": stop_price,
+        "target_price": target_price,
+        "qty": qty,
+        "status": "open",
+        "exit_date": "",
+        "exit_price": "",
+        "exit_reason": "",
+        "pnl": "",
+        "r_multiple": "",
+        "notes": (body.get("notes") or "").strip(),
+    }
+    try:
+        _append_trade(row)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 502
+    return jsonify(row)
+
+
+@app.route("/api/trades/<trade_id>/close", methods=["POST"])
+def api_trades_close(trade_id):
+    body = request.get_json(force=True, silent=True) or {}
+    try:
+        exit_price = float(body.get("exit_price"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "exit_price is required"}), 400
+    exit_reason = (body.get("exit_reason") or "manual_exit").strip()
+    exit_date = body.get("exit_date") or datetime.now().strftime("%Y-%m-%d")
+
+    try:
+        row_idx = _find_trade_row(trade_id)
+        if row_idx is None:
+            return jsonify({"error": "trade not found"}), 404
+        record = next((r for r in _read_trades() if str(r["id"]) == trade_id), None)
+        if record is None:
+            return jsonify({"error": "trade not found"}), 404
+
+        entry_price = float(record["entry_price"])
+        stop_price = float(record["stop_price"])
+        qty = float(record["qty"])
+        risk_per_share = entry_price - stop_price
+
+        record.update({
+            "status": "closed",
+            "exit_date": exit_date,
+            "exit_price": exit_price,
+            "exit_reason": exit_reason,
+            "pnl": round((exit_price - entry_price) * qty, 2),
+            "r_multiple": round((exit_price - entry_price) / risk_per_share, 2) if risk_per_share else "",
+        })
+        _update_trade_row(row_idx, record)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 502
+    return jsonify(record)
+
+
 @app.route("/")
 def index():
     return render_template("index.html")

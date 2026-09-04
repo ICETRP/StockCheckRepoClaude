@@ -58,6 +58,47 @@ git push -u origin main
 - To update the deployed app after making local changes: commit and
   `git push` — Render auto-redeploys on push.
 
+## 4. Trade Log setup (one-time, so trades survive future redeploys)
+
+The dashboard now has a **Trade Log** page (`/trades`) for recording entries, stop-losses,
+and exits. It's backed by a Google Sheet instead of a local file, since Render's disk is
+wiped on redeploy (see the tradeoffs note above) — a Google Sheet persists independently
+and you can also view/edit it directly from your phone.
+
+**a. Create the Google service account (one-time, ~5 min):**
+1. Go to [console.cloud.google.com](https://console.cloud.google.com), create a project
+   (or reuse one).
+2. Enable the **Google Sheets API** for that project (APIs & Services → Enable APIs →
+   search "Google Sheets API" → Enable).
+3. Go to **APIs & Services → Credentials → Create Credentials → Service Account**. Give
+   it any name (e.g. `trade-log-writer`). No roles needed.
+4. Open the new service account → **Keys** tab → **Add Key → Create new key → JSON**.
+   This downloads a `.json` key file — keep it private, never commit it to git.
+5. Note the service account's email address (looks like
+   `trade-log-writer@your-project.iam.gserviceaccount.com`).
+
+**b. Create the sheet:**
+1. Create a new Google Sheet (any name, e.g. "Claude Algo Trade Log").
+2. Click **Share** and share it with the service account's email from step a.5, with
+   **Editor** access.
+3. Copy the sheet's ID from its URL:
+   `https://docs.google.com/spreadsheets/d/`**`THIS_PART_IS_THE_ID`**`/edit`.
+
+**c. Set the environment variables** (both locally in `.env` and on Render, under
+**Environment**):
+- `TRADE_LOG_SHEET_ID` = the sheet ID from step b.3 (or paste the full URL — either works).
+- `GOOGLE_SERVICE_ACCOUNT_JSON` = the **entire contents** of the downloaded key file,
+  minified to a single line. Minify it with:
+  ```bash
+  python -c "import json;print(json.dumps(json.load(open('path/to/key.json'))))"
+  ```
+  Paste that one-line output as the value. Locally in `.env`, wrap it in single quotes:
+  `GOOGLE_SERVICE_ACCOUNT_JSON='{"type":"service_account", ...}'`
+
+Once both variables are set, `git push` and Render's auto-redeploy picks it up — no
+other deploy step needed. The sheet gets a header row automatically on first use, and
+every trade you log or close writes straight to it.
+
 ## Local use is unaffected
 
 Nothing changes for running it locally — `DASHBOARD_PASSWORD` is unset by default,

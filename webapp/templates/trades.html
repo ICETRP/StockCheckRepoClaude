@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trade Log — Claude Algo Dashboard</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-left">
+    <div class="brand">Claude Algo <span>Trade Log</span></div>
+    <div class="topbar-sub">Entries, stops &amp; exits — saved to a Google Sheet, survives redeploys</div>
+  </div>
+  <a href="{{ url_for('index') }}" class="btn btn-small">&larr; Dashboard</a>
+</header>
+
+<main class="trades-layout">
+  <section class="panel">
+    <h2>Log a New Trade</h2>
+    <form id="new-trade-form">
+      <label class="field">
+        <span>Ticker</span>
+        <input id="t-ticker" type="text" placeholder="e.g. NVDA" required>
+      </label>
+      <label class="field">
+        <span>Strategy / Source</span>
+        <select id="t-strategy">
+          <option value="earnings">Earnings-Beat Momentum</option>
+          <option value="swing">Swing RS Leaders</option>
+          <option value="breakout">Breakout / Coil</option>
+          <option value="manual">Manual / Other</option>
+        </select>
+      </label>
+      <div class="date-fields">
+        <label class="field">
+          <span>Entry Date</span>
+          <input id="t-entry-date" type="date">
+        </label>
+        <label class="field">
+          <span>Qty (shares)</span>
+          <input id="t-qty" type="number" step="1" required>
+        </label>
+      </div>
+      <div class="date-fields">
+        <label class="field">
+          <span>Entry Price</span>
+          <input id="t-entry-price" type="number" step="0.01" required>
+        </label>
+        <label class="field">
+          <span>Stop Price</span>
+          <input id="t-stop-price" type="number" step="0.01" required>
+        </label>
+      </div>
+      <label class="field">
+        <span>Target Price <small>(optional)</small></span>
+        <input id="t-target-price" type="number" step="0.01">
+      </label>
+      <label class="field">
+        <span>Notes <small>(optional)</small></span>
+        <input id="t-notes" type="text" placeholder="why you took this trade">
+      </label>
+      <div class="actions">
+        <button type="submit" class="btn btn-primary">Save Trade</button>
+        <span id="new-trade-status" class="muted"></span>
+      </div>
+    </form>
+  </section>
+
+  <section class="panel">
+    <h2>Stats</h2>
+    <div id="stats-box" class="chart-meta"></div>
+  </section>
+
+  <section class="panel trades-table-panel">
+    <h2>Trades <button id="refresh-trades" class="btn btn-small">Refresh</button></h2>
+    <div id="trades-table" class="table-wrap"><p class="muted">Loading…</p></div>
+  </section>
+</main>
+
+<div id="close-modal" class="modal-overlay" hidden>
+  <div class="modal-box close-modal-box">
+    <div class="modal-header">
+      <h3>Close Trade — <span id="close-ticker"></span></h3>
+      <button id="close-modal-x" class="btn btn-small">&times;</button>
+    </div>
+    <label class="field">
+      <span>Exit Date</span>
+      <input id="c-exit-date" type="date">
+    </label>
+    <label class="field">
+      <span>Exit Price</span>
+      <input id="c-exit-price" type="number" step="0.01">
+    </label>
+    <label class="field">
+      <span>Exit Reason</span>
+      <select id="c-exit-reason">
+        <option value="stop_loss">Stop-loss hit</option>
+        <option value="target_hit">Target hit</option>
+        <option value="manual_exit">Manual exit</option>
+        <option value="other">Other</option>
+      </select>
+    </label>
+    <div class="actions">
+      <button id="c-confirm" class="btn btn-primary">Confirm Close</button>
+      <span id="close-status" class="muted"></span>
+    </div>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='trades.js') }}"></script>
+</body>
+</html>
