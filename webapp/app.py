@@ -603,6 +603,91 @@ def trades_page():
     return render_template("trades.html")
 
 
+# ==================== PAPER TRADING (Alpaca) — order placement + live positions/P&L ====================
+
+def _alpaca_trading_request(method, path, json_body=None):
+    key = os.environ.get("ALPACA_API_KEY")
+    secret = os.environ.get("ALPACA_API_SECRET")
+    base = os.environ.get("ALPACA_BASE_URL", "https://paper-api.alpaca.markets")
+    if not key or not secret:
+        raise RuntimeError("Alpaca isn't configured - set ALPACA_API_KEY/ALPACA_API_SECRET in the environment.")
+    headers = {"APCA-API-KEY-ID": key, "APCA-API-SECRET-KEY": secret}
+    resp = requests.request(method, f"{base}{path}", headers=headers, json=json_body, timeout=15)
+    if resp.status_code >= 400:
+        try:
+            detail = resp.json().get("message", resp.text)
+        except Exception:
+            detail = resp.text
+        raise RuntimeError(f"Alpaca {method} {path} failed ({resp.status_code}): {detail}")
+    return resp.json() if resp.text else {}
+
+
+@app.route("/api/account")
+def api_account():
+    try:
+        return jsonify(_alpaca_trading_request("GET", "/v2/account"))
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 502
+
+
+@app.route("/api/positions", methods=["GET"])
+def api_positions():
+    try:
+        return jsonify(_alpaca_trading_request("GET", "/v2/positions"))
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 502
+
+
+@app.route("/api/orders", methods=["POST"])
+def api_orders_create():
+    body = request.get_json(force=True, silent=True) or {}
+    ticker = (body.get("symbol") or "").strip().upper()
+    if not ticker or not TICKER_RE.match(ticker):
+        return jsonify({"error": "invalid ticker"}), 400
+    try:
+        qty = float(body.get("qty"))
+        if qty <= 0:
+            raise ValueError
+    except (TypeError, ValueError):
+        return jsonify({"error": "qty must be a positive number"}), 400
+
+    stop_raw = body.get("stop_price")
+    target_raw = body.get("target_price")
+    stop_price = float(stop_raw) if stop_raw not in (None, "") else None
+    target_price = float(target_raw) if target_raw not in (None, "") else None
+
+    order = {"symbol": ticker, "qty": str(qty), "side": "buy", "type": "market"}
+    if stop_price and target_price:
+        order["order_class"] = "bracket"
+        order["take_profit"] = {"limit_price": str(target_price)}
+        order["stop_loss"] = {"stop_price": str(stop_price)}
+        order["time_in_force"] = "gtc"
+    elif stop_price:
+        order["order_class"] = "oto"
+        order["stop_loss"] = {"stop_price": str(stop_price)}
+        order["time_in_force"] = "gtc"
+    else:
+        order["time_in_force"] = "day"
+
+    try:
+        result = _alpaca_trading_request("POST", "/v2/orders", order)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 502
+    return jsonify(result)
+
+
+@app.route("/api/positions/<symbol>/close", methods=["POST"])
+def api_positions_close(symbol):
+    symbol = symbol.strip().upper()
+    if not TICKER_RE.match(symbol):
+        return jsonify({"error": "invalid ticker"}), 400
+    try:
+        result = _alpaca_trading_request("DELETE", f"/v2/positions/{symbol}")
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 502
+    return jsonify(result)
+
+
 @app.route("/api/trades", methods=["GET"])
 def api_trades_list():
     try:

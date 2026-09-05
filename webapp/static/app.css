@@ -73,7 +73,7 @@ body {
 .layout {
   display: grid;
   grid-template-columns: 340px 1fr;
-  grid-template-rows: auto auto;
+  grid-template-rows: auto auto auto;
   gap: 16px;
   padding: 20px;
 }
@@ -81,6 +81,7 @@ body {
 .run-panel { grid-row: 1 / 3; }
 .results-panel { grid-column: 2; grid-row: 1; }
 .history-panel { grid-column: 2; grid-row: 2; }
+.portfolio-panel { grid-column: 1 / 3; grid-row: 3; }
 
 .panel {
   background: var(--panel);

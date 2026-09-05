@@ -109,7 +109,38 @@
     <h2>Run History <button id="refresh-history" class="btn btn-small">Refresh</button></h2>
     <div id="history-list" class="history-list"><p class="muted">No runs yet.</p></div>
   </section>
+
+  <section class="panel portfolio-panel">
+    <h2>Paper Portfolio (Alpaca) <button id="refresh-portfolio" class="btn btn-small">Refresh</button></h2>
+    <div id="portfolio-summary" class="chart-meta"></div>
+    <div id="positions-table" class="table-wrap"><p class="muted">Loading…</p></div>
+  </section>
 </main>
+
+<div id="buy-modal" class="modal-overlay" hidden>
+  <div class="modal-box close-modal-box">
+    <div class="modal-header">
+      <h3>Buy (Paper) — <span id="buy-ticker"></span></h3>
+      <button id="buy-modal-x" class="btn btn-small">&times;</button>
+    </div>
+    <label class="field">
+      <span>Qty (shares)</span>
+      <input id="buy-qty" type="number" step="1" value="1">
+    </label>
+    <label class="field">
+      <span>Stop Price <small>(optional — attaches a bracket stop-loss)</small></span>
+      <input id="buy-stop" type="number" step="0.01">
+    </label>
+    <label class="field">
+      <span>Target Price <small>(optional — attaches a bracket take-profit)</small></span>
+      <input id="buy-target" type="number" step="0.01">
+    </label>
+    <div class="actions">
+      <button id="buy-confirm" class="btn btn-primary">Place Paper Order</button>
+      <span id="buy-status" class="muted"></span>
+    </div>
+  </div>
+</div>
 
 <div id="chart-modal" class="modal-overlay" hidden>
   <div class="modal-box">

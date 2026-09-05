@@ -29,6 +29,9 @@ async function init() {
   $('run-btn').addEventListener('click', runStrategy);
   $('cancel-btn').addEventListener('click', cancelJob);
   $('refresh-history').addEventListener('click', loadHistory);
+  $('refresh-portfolio').addEventListener('click', loadPortfolio);
+  $('buy-modal-x').addEventListener('click', () => { $('buy-modal').hidden = true; });
+  $('buy-confirm').addEventListener('click', placeBuyOrder);
 
   document.querySelectorAll('#provider, #tickers, #entry_mode, #start, #end, #universe_limit')
     .forEach(el => el.addEventListener('input', updateCmdPreview));
@@ -54,6 +57,7 @@ async function init() {
 
   renderStrategyFields();
   loadHistory();
+  loadPortfolio();
 
   const allTickers = new Set();
   Object.values(SCRIPTS).forEach(cfg => (cfg.default_watchlist || []).forEach(t => allTickers.add(t)));
@@ -268,7 +272,8 @@ function renderTable(table) {
 
   const ranked = rankRows(table);
   const tickerCol = table.columns.find(c => c.toLowerCase() === 'ticker');
-  const head = (ranked ? '<th>#</th>' : '') + table.columns.map(c => `<th>${c}</th>`).join('');
+  const stopCol = findCol(table.columns, STOP_COLUMNS);
+  const head = (ranked ? '<th>#</th>' : '') + table.columns.map(c => `<th>${c}</th>`).join('') + (tickerCol ? '<th></th>' : '');
 
   const cellHtml = (row, c) => {
     const val = row[c] ?? '';
@@ -278,15 +283,21 @@ function renderTable(table) {
     return `<td>${val}</td>`;
   };
 
+  const buyCell = (row) => {
+    if (!tickerCol || !row[tickerCol]) return '';
+    const stopVal = stopCol ? (row[stopCol] ?? '') : '';
+    return `<td><button class="btn btn-small buy-btn" data-ticker="${row[tickerCol]}" data-stop="${stopVal}">Buy</button></td>`;
+  };
+
   let rows;
   if (ranked) {
     rows = ranked.map(({ row, rank, tier }) =>
       `<tr class="tier-${tier}"><td class="rank-cell">${rank}</td>` +
-      table.columns.map(c => cellHtml(row, c)).join('') + '</tr>'
+      table.columns.map(c => cellHtml(row, c)).join('') + buyCell(row) + '</tr>'
     ).join('');
   } else {
     rows = table.rows.map(r =>
-      '<tr>' + table.columns.map(c => cellHtml(r, c)).join('') + '</tr>'
+      '<tr>' + table.columns.map(c => cellHtml(r, c)).join('') + buyCell(r) + '</tr>'
     ).join('');
   }
 
@@ -303,7 +314,25 @@ function renderTable(table) {
     el.querySelectorAll('td.ticker-cell').forEach(td => {
       td.addEventListener('click', () => openChart(td.dataset.ticker));
     });
+    el.querySelectorAll('.buy-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openBuyModal(btn.dataset.ticker, btn.dataset.stop);
+      });
+    });
   }
+}
+
+// Column-name guesses across the three screeners' differing CSV schemas.
+const STOP_COLUMNS = ['suggested_stop', 'stop', 'stop_loss', 'sl'];
+
+function findCol(columns, candidates) {
+  const lower = columns.map(c => c.toLowerCase());
+  for (const cand of candidates) {
+    const idx = lower.indexOf(cand);
+    if (idx !== -1) return columns[idx];
+  }
+  return null;
 }
 
 async function loadHistory() {
@@ -525,6 +554,114 @@ function renderVerdict(data) {
   badge.className = 'verdict-badge ' + v.action;
   $('verdict-price').textContent = data.last_close;
   $('verdict-notes').innerHTML = v.notes.map(n => `<li>${n}</li>`).join('');
+}
+
+// ==================== Paper Trading (Alpaca) — Buy modal + Portfolio P&L panel ====================
+
+let buyContext = null;
+
+function openBuyModal(ticker, stopGuess) {
+  buyContext = { ticker };
+  $('buy-ticker').textContent = ticker;
+  $('buy-qty').value = 1;
+  $('buy-stop').value = stopGuess || '';
+  $('buy-target').value = '';
+  $('buy-status').textContent = '';
+  $('buy-modal').hidden = false;
+}
+
+async function placeBuyOrder() {
+  if (!buyContext) return;
+  const statusEl = $('buy-status');
+  const body = {
+    symbol: buyContext.ticker,
+    qty: $('buy-qty').value,
+    stop_price: $('buy-stop').value,
+    target_price: $('buy-target').value,
+  };
+  statusEl.textContent = 'Placing order…';
+  try {
+    const res = await fetch('/api/orders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    statusEl.textContent = 'Order placed.';
+    setTimeout(() => { $('buy-modal').hidden = true; loadPortfolio(); }, 600);
+  } catch (e) {
+    statusEl.textContent = 'Error: ' + e.message;
+  }
+}
+
+function fmtMoney(n) {
+  const num = Number(n);
+  return Number.isFinite(num) ? num.toFixed(2) : '—';
+}
+
+function pnlColor(n) {
+  return Number(n) >= 0 ? 'var(--accent-2)' : 'var(--danger)';
+}
+
+async function loadPortfolio() {
+  const summaryEl = $('portfolio-summary');
+  const posEl = $('positions-table');
+  try {
+    const [accRes, posRes] = await Promise.all([fetch('/api/account'), fetch('/api/positions')]);
+    const account = await accRes.json();
+    const positions = await posRes.json();
+    if (account.error) throw new Error(account.error);
+    if (positions.error) throw new Error(positions.error);
+
+    const equity = Number(account.equity);
+    const lastEquity = Number(account.last_equity);
+    const dayPnl = equity - lastEquity;
+    const dayPnlPct = lastEquity ? (dayPnl / lastEquity) * 100 : 0;
+    const totalUnrealized = positions.reduce((s, p) => s + Number(p.unrealized_pl || 0), 0);
+
+    summaryEl.innerHTML = `
+      <div class="meta-box"><div class="meta-label">Equity</div><div class="meta-value">$${fmtMoney(equity)}</div></div>
+      <div class="meta-box"><div class="meta-label">Cash</div><div class="meta-value">$${fmtMoney(account.cash)}</div></div>
+      <div class="meta-box"><div class="meta-label">Day P&amp;L</div><div class="meta-value" style="color:${pnlColor(dayPnl)}">${dayPnl >= 0 ? '+' : ''}$${fmtMoney(dayPnl)} (${dayPnlPct.toFixed(2)}%)</div></div>
+      <div class="meta-box"><div class="meta-label">Open Positions Unrealized P&amp;L</div><div class="meta-value" style="color:${pnlColor(totalUnrealized)}">${totalUnrealized >= 0 ? '+' : ''}$${fmtMoney(totalUnrealized)}</div></div>
+    `;
+
+    if (!positions.length) {
+      posEl.innerHTML = '<p class="muted">No open paper positions.</p>';
+      return;
+    }
+    const rows = positions.map(p => {
+      const upl = Number(p.unrealized_pl);
+      const uplPct = Number(p.unrealized_plpc) * 100;
+      return `<tr>
+        <td>${p.symbol}</td>
+        <td>${p.qty}</td>
+        <td>${fmtMoney(p.avg_entry_price)}</td>
+        <td>${fmtMoney(p.current_price)}</td>
+        <td>${fmtMoney(p.market_value)}</td>
+        <td style="color:${pnlColor(upl)}">${upl >= 0 ? '+' : ''}${fmtMoney(upl)} (${uplPct.toFixed(2)}%)</td>
+        <td><button class="btn btn-small close-pos-btn" data-symbol="${p.symbol}">Close</button></td>
+      </tr>`;
+    }).join('');
+    posEl.innerHTML = `
+      <table><thead><tr>
+        <th>Symbol</th><th>Qty</th><th>Avg Entry</th><th>Current</th><th>Market Value</th><th>Unrealized P&amp;L</th><th></th>
+      </tr></thead><tbody>${rows}</tbody></table>
+    `;
+    posEl.querySelectorAll('.close-pos-btn').forEach(btn => {
+      btn.addEventListener('click', () => closePosition(btn.dataset.symbol));
+    });
+  } catch (e) {
+    summaryEl.innerHTML = '';
+    posEl.innerHTML = `<p class="muted">Portfolio unavailable: ${e.message}</p>`;
+  }
+}
+
+async function closePosition(symbol) {
+  if (!confirm(`Close entire paper position in ${symbol}?`)) return;
+  await fetch(`/api/positions/${encodeURIComponent(symbol)}/close`, { method: 'POST' });
+  loadPortfolio();
 }
 
 init();
