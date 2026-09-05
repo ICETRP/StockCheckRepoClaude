@@ -572,8 +572,8 @@ def main():
 
             # if user requested CSV, save with provider prefix/suffix into outputs folder
             if args.csv:
-                provider_csv_name = f"{provider}_{args.csv}"
-                provider_csv = os.path.join(outputs_dir, provider_csv_name)
+                csv_dir, csv_base = os.path.split(args.csv)
+                provider_csv = os.path.join(csv_dir, f"{provider}_{csv_base}") if csv_dir else f"{provider}_{csv_base}"
                 try:
                     # attempt to create a combined screen/backtest summary CSV if available
                     results_df = screen_watchlist(args.tickers, cfg)
@@ -619,8 +619,8 @@ def main():
                           f"{', '.join(buys['ticker'].tolist()) if not buys.empty else 'none'}")
 
                     if args.csv:
-                        provider_csv_name = f"{provider}_{args.csv}"
-                        provider_csv = os.path.join(outputs_dir, provider_csv_name)
+                        csv_dir, csv_base = os.path.split(args.csv)
+                        provider_csv = os.path.join(csv_dir, f"{provider}_{csv_base}") if csv_dir else f"{provider}_{csv_base}"
                         results.to_csv(provider_csv, index=False)
                         print(f"\nSaved results to {provider_csv}")
                         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -655,7 +655,7 @@ def main():
               f"{', '.join(buys['ticker'].tolist()) if not buys.empty else 'none'}")
 
         if args.csv:
-            out_csv = os.path.join(outputs_dir, args.csv)
+            out_csv = args.csv
             results.to_csv(out_csv, index=False)
             print(f"\nSaved results to {out_csv}")
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
